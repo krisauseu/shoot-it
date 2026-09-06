@@ -1,8 +1,8 @@
 # Architektur und Entscheidungen
 
-## Ziel des MVP
+## Ziel
 
-Der erste Stand deckt einen vollständigen kurzen Ablauf ab: globaler Hotkey, Rechteckauswahl, pixelgenaue Aufnahme, zerstörungsfreie Annotationen, Export in die Zwischenablage oder als PNG und Archivierung als Idee. Vollbild- und Fensteraufnahme, Timer und eine eigene Ideen-Galerie bleiben bewusst außerhalb des MVP.
+Shoot It deckt einen kurzen Ablauf ab: globaler Hotkey, Rechteckauswahl, pixelgenaue Aufnahme, zerstörungsfreie Annotationen, Export in die Zwischenablage oder als PNG und Archivierung als Idee. Eine lokale Galerie macht archivierte Ideen ohne Wechsel in den Finder zugänglich.
 
 ## Aufbau
 
@@ -23,6 +23,10 @@ AppKit-Auswahl-Overlay ──► ScreenCaptureKit ──► ScreenshotDocument
 ```
 
 `ScreenshotDocument` hält das unveränderte `CGImage` und eine Liste aus `Annotation`-Werten. Alle Punkte liegen in Pixelkoordinaten des Quellbildes mit Ursprung oben links. Der Editor skaliert sie nur für die Anzeige. Der Export zeichnet sie in Originalauflösung auf eine neue Bitmap.
+
+Text speichert neben der Position eine explizite Schriftgröße in Quellbild-Pixeln. `AnnotationTextLayout` berechnet die gemeinsame Begrenzungsbox für Auswahl, Griffe und Hit-Testing. Die direkte Eingabe liegt nur während der Bearbeitung als AppKit-Textansicht über dem SwiftUI-Canvas. `Return` übernimmt, `Shift+Return` fügt einen manuellen Zeilenumbruch ein und `Esc` verwirft die laufende Eingabe.
+
+`AnnotationSelectionGeometry` berechnet die Griffe ohne UI-Zustand. `AnnotationTransformer` wendet eine Griffbewegung auf eine unveränderte Ausgangsannotation an. Der `EditorStore` merkt sich vor dem Ziehen genau einen Zustand und legt ihn erst beim Loslassen auf den Undo-Stack. Zwischenstände eines Drags erzeugen deshalb keine zusätzlichen Undo-Schritte.
 
 ## Aufnahme
 
@@ -54,12 +58,16 @@ Eine Idee ist eine einzelne PNG-Datei:
 2026-09-06_09-15-32.png
 ```
 
-Eine spätere Galerie liest die PNG-Dateien und ihre Dateidaten direkt aus dem Ordner. Falls Titel, Notizen oder Tags dazukommen, speichert die App diese in einem einzelnen lokalen Index unter Application Support. So bleibt der vom Benutzer gewählte Ideenordner frei von technischen Begleitdateien.
+Die Galerie liest PNG-Dateien und ihre Dateidaten direkt aus dem Ordner. Für von Shoot It erzeugte Dateinamen nimmt sie den Zeitstempel im Namen als Aufnahmedatum, sonst das Erstellungs- oder Änderungsdatum der Datei. Ein `DispatchSource` meldet Änderungen im Ordner. Ein asynchroner Kataloglauf sortiert und filtert die Einträge.
+
+`ThumbnailCache` dekodiert Bilder mit ImageIO direkt auf die benötigte Vorschaugröße. Der begrenzte `NSCache` hält keine Originalbilder. Sein Schlüssel enthält Pfad, Dateigröße, Änderungszeit und Zielgröße, sodass eine ersetzte PNG-Datei kein veraltetes Thumbnail behält.
+
+Die Galerie schreibt weder JSON-Sidecars noch andere Dateien in den Ideenordner. Falls Titel, Notizen oder Tags dazukommen, gehören sie in einen einzigen Index unter Application Support. `IdeaItem` bleibt die Stelle, an der solche optionalen Metadaten später mit den Dateidaten zusammengeführt werden können.
 
 ## Nächste sinnvolle Schritte
 
-1. Text direkt auf der Zeichenfläche bearbeiten statt im Eingabedialog.
-2. Griffe zum Skalieren und Ändern vorhandener Annotationen ergänzen.
-3. Ideen-Galerie als separates Fenster auf Basis der PNG-Dateien bauen.
+1. Vollbild- und Fensteraufnahme sowie einen Timer ergänzen.
+2. Titel, Notizen und Tags über einen einzelnen Index unter Application Support ergänzen.
+3. Drehung von Annotationen und freies Skalieren von Freihandlinien ergänzen.
 4. Developer-ID-Signing, Notarisierung und bei Bedarf App-Sandbox mit Security-Scoped Bookmarks einrichten.
-5. UI-Tests auf echten Monitoranordnungen durchführen, insbesondere bei verschiedenen Skalierungsfaktoren und Auswahl über Displaygrenzen hinweg.
+5. UI-Tests auf echten Monitoranordnungen und bei extremen Zoomfaktoren durchführen.

@@ -14,13 +14,14 @@ struct EditorView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            EditorCanvas(store: store, requestText: requestText)
+            EditorCanvas(store: store)
                 .frame(minWidth: 640, minHeight: 400)
             Divider().opacity(0.35)
             toolbar
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .onDeleteCommand { store.deleteSelected() }
+        .onChange(of: store.tool) { _, _ in store.commitTextEditing() }
     }
 
     private var toolbar: some View {
@@ -89,20 +90,6 @@ struct EditorView: View {
         .padding(.vertical, 9)
     }
 
-    private func requestText(at point: CGPoint) {
-        let alert = NSAlert()
-        alert.messageText = "Text einfügen"
-        alert.informativeText = "Der Text wird an der angeklickten Stelle platziert."
-        alert.addButton(withTitle: "Einfügen")
-        alert.addButton(withTitle: "Abbrechen")
-        let field = NSTextField(frame: CGRect(x: 0, y: 0, width: 300, height: 24))
-        field.placeholderString = "Text"
-        alert.accessoryView = field
-        alert.window.initialFirstResponder = field
-        if alert.runModal() == .alertFirstButtonReturn {
-            store.addText(field.stringValue, at: point)
-        }
-    }
 }
 
 private struct ToolButtonStyle: ButtonStyle {

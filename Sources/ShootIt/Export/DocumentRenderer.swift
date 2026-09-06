@@ -84,7 +84,7 @@ enum DocumentRenderer {
             points.dropFirst().forEach { context.addLine(to: $0) }
             context.strokePath()
         case .text:
-            drawText(annotation.text ?? "", at: first, color: color, lineWidth: annotation.lineWidth, in: context)
+            drawText(annotation.text ?? "", at: first, color: color, fontSize: annotation.fontSize, in: context)
         }
         context.restoreGState()
     }
@@ -106,16 +106,19 @@ enum DocumentRenderer {
         context.strokePath()
     }
 
-    private static func drawText(_ text: String, at point: CGPoint, color: CGColor, lineWidth: CGFloat, in context: CGContext) {
-        let fontSize = max(18, lineWidth * 6)
+    private static func drawText(_ text: String, at point: CGPoint, color: CGColor, fontSize: CGFloat, in context: CGContext) {
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .semibold)
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: fontSize, weight: .semibold),
+            .font: font,
             .foregroundColor: NSColor(cgColor: color) ?? .white
         ]
-        let attributed = NSAttributedString(string: text, attributes: attributes)
-        let line = CTLineCreateWithAttributedString(attributed)
-        context.textPosition = CGPoint(x: point.x, y: point.y - fontSize)
-        CTLineDraw(line, context)
+        let lineHeight = ceil(font.ascender - font.descender + font.leading)
+        for (index, value) in text.components(separatedBy: "\n").enumerated() {
+            let attributed = NSAttributedString(string: value, attributes: attributes)
+            let line = CTLineCreateWithAttributedString(attributed)
+            context.textPosition = CGPoint(x: point.x, y: point.y - fontSize - CGFloat(index) * lineHeight)
+            CTLineDraw(line, context)
+        }
     }
 
     private static func standardRect(from a: CGPoint, to b: CGPoint) -> CGRect {

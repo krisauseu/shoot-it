@@ -47,6 +47,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
 
     private func copyResult() {
         guard let store else { return }
+        store.commitTextEditing()
         do {
             let image = try DocumentRenderer.render(store.document)
             let pasteboard = NSPasteboard.general
@@ -60,6 +61,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
 
     private func saveResult() {
         guard let store, let window else { return }
+        store.commitTextEditing()
         let panel = NSSavePanel()
         panel.title = "Screenshot sichern"
         panel.nameFieldStringValue = defaultFilename(for: store.document.createdAt)
@@ -77,6 +79,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
 
     private func archiveIdea() {
         guard let store else { return }
+        store.commitTextEditing()
         do {
             _ = try IdeaStorage.save(store.document, to: Preferences.shared.ideaFolderURL)
             closeWithoutPrompt()

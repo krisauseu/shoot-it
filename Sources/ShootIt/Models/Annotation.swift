@@ -66,6 +66,7 @@ struct Annotation: Identifiable, Codable, Equatable, Sendable {
     var color: RGBAColor
     var lineWidth: CGFloat
     var text: String?
+    var fontSize: CGFloat
 
     init(
         id: UUID = UUID(),
@@ -73,7 +74,8 @@ struct Annotation: Identifiable, Codable, Equatable, Sendable {
         points: [CGPoint],
         color: RGBAColor,
         lineWidth: CGFloat,
-        text: String? = nil
+        text: String? = nil,
+        fontSize: CGFloat = 24
     ) {
         self.id = id
         self.kind = kind
@@ -81,11 +83,15 @@ struct Annotation: Identifiable, Codable, Equatable, Sendable {
         self.color = color
         self.lineWidth = lineWidth
         self.text = text
+        self.fontSize = fontSize
     }
 
     var cgPoints: [CGPoint] { points.map(\.cgPoint) }
 
     var bounds: CGRect {
+        if kind == .text, let origin = cgPoints.first {
+            return CGRect(origin: origin, size: AnnotationTextLayout.size(for: text ?? "", fontSize: fontSize))
+        }
         guard let first = cgPoints.first else { return .zero }
         return cgPoints.dropFirst().reduce(CGRect(origin: first, size: .zero)) { partial, point in
             partial.union(CGRect(origin: point, size: .zero))
@@ -94,5 +100,17 @@ struct Annotation: Identifiable, Codable, Equatable, Sendable {
 
     mutating func translate(by delta: CGSize) {
         points = points.map { CodablePoint(CGPoint(x: $0.x + delta.width, y: $0.y + delta.height)) }
+    }
+}
+
+enum AnnotationTextLayout {
+    static func size(for text: String, fontSize: CGFloat) -> CGSize {
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .semibold)
+        let lines = text.components(separatedBy: "\n")
+        let widths = lines.map { ($0.isEmpty ? " " : $0).size(withAttributes: [.font: font]).width }
+        return CGSize(
+            width: max(12, ceil(widths.max() ?? 0)),
+            height: max(fontSize, ceil(font.ascender - font.descender + font.leading) * CGFloat(max(1, lines.count)))
+        )
     }
 }

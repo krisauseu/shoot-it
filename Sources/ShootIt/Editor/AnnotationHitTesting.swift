@@ -6,10 +6,7 @@ enum AnnotationHitTesting {
         let points = annotation.cgPoints
         switch annotation.kind {
         case .text:
-            guard let origin = points.first else { return false }
-            let width = max(60, CGFloat(annotation.text?.count ?? 0) * max(8, annotation.lineWidth * 3))
-            let height = max(22, annotation.lineWidth * 7)
-            return CGRect(x: origin.x, y: origin.y, width: width, height: height)
+            return annotation.bounds
                 .insetBy(dx: -tolerance, dy: -tolerance).contains(point)
         case .rectangle, .ellipse:
             return annotation.bounds.insetBy(dx: -tolerance, dy: -tolerance).contains(point)

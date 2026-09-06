@@ -2,25 +2,32 @@ import SwiftUI
 
 struct EditorCanvas: View {
     @ObservedObject var store: EditorStore
-    let requestText: (CGPoint) -> Void
 
     @State private var dragStarted = false
+    @State private var dragOperation: DragOperation?
 
     var body: some View {
         GeometryReader { proxy in
             let imageRect = fittedRect(imageSize: store.document.imageSize, in: proxy.size)
-            Canvas { context, _ in
-                let image = Image(decorative: store.document.sourceImage, scale: 1)
-                context.draw(image, in: imageRect)
-                for annotation in store.document.annotations {
-                    draw(annotation, selected: annotation.id == store.selectedID, in: &context, imageRect: imageRect)
+            ZStack(alignment: .topLeading) {
+                Canvas { context, _ in
+                    let image = Image(decorative: store.document.sourceImage, scale: 1)
+                    context.draw(image, in: imageRect)
+                    for annotation in store.document.annotations where annotation.id != store.textEditing?.annotationID {
+                        draw(annotation, selected: annotation.id == store.selectedID, in: &context, imageRect: imageRect)
+                    }
+                    if let draft = store.draft {
+                        draw(draft, selected: false, in: &context, imageRect: imageRect)
+                    }
                 }
-                if let draft = store.draft {
-                    draw(draft, selected: false, in: &context, imageRect: imageRect)
+                .contentShape(Rectangle())
+                .gesture(dragGesture(imageRect: imageRect))
+                .simultaneousGesture(doubleClickGesture(imageRect: imageRect))
+
+                if let session = store.textEditing {
+                    inlineTextEditor(session: session, imageRect: imageRect)
                 }
             }
-            .contentShape(Rectangle())
-            .gesture(dragGesture(imageRect: imageRect))
             .background(Color.black.opacity(0.32))
         }
     }
@@ -34,39 +41,115 @@ struct EditorCanvas: View {
 
                 if !dragStarted {
                     dragStarted = true
+                    if store.textEditing != nil { store.commitTextEditing() }
                     switch store.tool {
                     case .pointer:
-                        store.select(at: start, tolerance: 10 / imageScale(imageRect))
-                        store.beginMove()
+                        if let annotation = selectedAnnotation,
+                           let handle = AnnotationSelectionGeometry.hitTest(
+                            annotation,
+                            displayPoint: value.startLocation,
+                            displayPosition: { displayPoint($0, imageRect: imageRect) }
+                           ) {
+                            store.beginTransform(handle: handle)
+                            dragOperation = .transform(handle)
+                        } else {
+                            store.select(at: start, tolerance: 10 / imageScale(imageRect))
+                            store.beginMove()
+                            dragOperation = .move
+                        }
                     case .text:
-                        break
+                        dragOperation = .text
                     default:
                         store.beginAnnotation(at: start)
+                        dragOperation = .draw
                     }
                 }
 
-                switch store.tool {
-                case .pointer:
+                switch dragOperation {
+                case .move:
                     store.moveSelected(by: CGSize(width: current.x - start.x, height: current.y - start.y))
-                case .text:
-                    break
-                default:
+                case let .transform(handle):
+                    store.transformSelected(
+                        handle: handle,
+                        to: current,
+                        preserveAspectRatio: NSEvent.modifierFlags.contains(.shift)
+                    )
+                case .draw:
                     store.updateAnnotation(to: current)
+                case .text, .none:
+                    break
                 }
             }
             .onEnded { value in
-                defer { dragStarted = false }
+                defer {
+                    dragStarted = false
+                    dragOperation = nil
+                }
                 guard imageRect.contains(value.startLocation),
                       let point = imagePoint(value.startLocation, imageRect: imageRect) else { return }
-                switch store.tool {
-                case .pointer:
+                switch dragOperation {
+                case .move:
                     store.finishMove()
+                case .transform:
+                    store.finishTransform()
                 case .text:
-                    requestText(point)
-                default:
+                    if hypot(value.location.x - value.startLocation.x, value.location.y - value.startLocation.y) < 4 {
+                        store.beginText(at: point)
+                    }
+                case .draw:
                     store.finishAnnotation()
+                case .none:
+                    break
                 }
             }
+    }
+
+    private func doubleClickGesture(imageRect: CGRect) -> some Gesture {
+        SpatialTapGesture(count: 2)
+            .onEnded { value in
+                guard let point = imagePoint(value.location, imageRect: imageRect),
+                      let annotation = store.document.annotations.reversed().first(where: {
+                          $0.kind == .text && AnnotationHitTesting.contains(
+                              $0,
+                              point: point,
+                              tolerance: 10 / imageScale(imageRect)
+                          )
+                      }) else { return }
+                store.beginEditingText(id: annotation.id)
+            }
+    }
+
+    @ViewBuilder
+    private func inlineTextEditor(session: EditorStore.TextEditingSession, imageRect: CGRect) -> some View {
+        let scale = imageScale(imageRect)
+        let annotation = session.annotationID.flatMap { id in
+            store.document.annotations.first(where: { $0.id == id })
+        }
+        let sourceFontSize = annotation?.fontSize ?? max(18, store.lineWidth * 6)
+        let width = max(240, AnnotationTextLayout.size(for: session.text, fontSize: sourceFontSize).width * scale + 16)
+        let height = min(220, max(68, AnnotationTextLayout.size(for: session.text, fontSize: sourceFontSize).height * scale + 16))
+        let origin = displayPoint(session.origin, imageRect: imageRect)
+
+        VStack(alignment: .leading, spacing: 4) {
+            InlineTextEditor(
+                text: Binding(
+                    get: { store.textEditing?.text ?? "" },
+                    set: store.updateEditingText
+                ),
+                fontSize: max(12, sourceFontSize * scale),
+                color: annotation?.color.nsColor ?? store.color.nsColor,
+                onCommit: store.commitTextEditing,
+                onCancel: store.cancelTextEditing
+            )
+            .frame(width: min(width, max(120, imageRect.maxX - origin.x)), height: height)
+            Text("Return übernimmt · Shift+Return fügt eine Zeile ein · Esc bricht ab")
+                .font(.caption2)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 5))
+        }
+        .offset(x: origin.x, y: origin.y)
     }
 
     private func draw(_ annotation: Annotation, selected: Bool, in context: inout GraphicsContext, imageRect: CGRect) {
@@ -98,7 +181,7 @@ struct EditorCanvas: View {
             points.dropFirst().forEach { path.addLine(to: $0) }
             context.stroke(path, with: .color(color), style: stroke)
         case .text:
-            let fontSize = max(18, annotation.lineWidth * 6) * scale
+            let fontSize = annotation.fontSize * scale
             context.draw(
                 Text(annotation.text ?? "").font(.system(size: fontSize, weight: .semibold)).foregroundStyle(color),
                 at: first,
@@ -113,6 +196,12 @@ struct EditorCanvas: View {
             let rect = standardRect(topLeft, bottomRight).insetBy(dx: -6, dy: -6)
             context.stroke(Path(rect), with: .color(.white.opacity(0.9)),
                            style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            for handle in AnnotationSelectionGeometry.handles(for: annotation) {
+                let center = displayPoint(handle.position, imageRect: imageRect)
+                let handleRect = CGRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10)
+                context.fill(Path(ellipseIn: handleRect), with: .color(.accentColor))
+                context.stroke(Path(ellipseIn: handleRect), with: .color(.white), lineWidth: 1.5)
+            }
         }
     }
 
@@ -153,7 +242,19 @@ struct EditorCanvas: View {
         return CGPoint(x: imageRect.minX + point.x * scale, y: imageRect.minY + point.y * scale)
     }
 
+    private var selectedAnnotation: Annotation? {
+        guard let id = store.selectedID else { return nil }
+        return store.document.annotations.first(where: { $0.id == id })
+    }
+
     private func standardRect(_ a: CGPoint, _ b: CGPoint) -> CGRect {
         CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
     }
+}
+
+private enum DragOperation {
+    case move
+    case transform(SelectionHandleKind)
+    case draw
+    case text
 }

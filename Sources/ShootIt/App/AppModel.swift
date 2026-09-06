@@ -9,6 +9,7 @@ final class AppModel: ObservableObject {
     let preferences = Preferences.shared
     private let hotKeyManager = HotKeyManager()
     private let editor = EditorWindowController()
+    private let gallery = IdeaGalleryWindowController()
     private lazy var captureCoordinator = CaptureCoordinator(
         showEditor: { [weak self] document in self?.editor.show(document: document) },
         reportError: { [weak self] error in self?.present(error) }
@@ -33,10 +34,8 @@ final class AppModel: ObservableObject {
         captureCoordinator.start()
     }
 
-    func openIdeasFolder() {
-        let url = preferences.ideaFolderURL
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(url)
+    func openIdeasGallery() {
+        gallery.show(preferences: preferences)
     }
 
     private func registerHotKey() {

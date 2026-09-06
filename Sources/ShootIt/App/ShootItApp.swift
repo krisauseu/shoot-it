@@ -14,8 +14,8 @@ struct ShootItApp: App {
                 }
                 .keyboardShortcut("1")
 
-                Button("Ideen im Finder öffnen") {
-                    model.openIdeasFolder()
+                Button("Ideen öffnen") {
+                    model.openIdeasGallery()
                 }
 
                 Divider()
